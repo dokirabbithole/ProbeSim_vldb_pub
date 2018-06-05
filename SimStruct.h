@@ -1,8 +1,6 @@
 #ifndef SIMSTRUCT_H
 #define SIMSTRUCT_H
 
-//#define INT_MAX 32767
-
 #include <vector>
 #include <algorithm>
 #include <queue>
@@ -14,12 +12,13 @@
 #include <string>
 #include <sstream>
 #include "Graph.h"
-//#include "BitArray.h"
 #include "Random.h"
 #include <unordered_map>
 #include <string.h>
 #include <math.h>
 #include "util.h"
+
+using namespace std;
 
 // sort pair<int, double> in non-increasing order by double value
 bool comp(const pair<int, double> &a, const pair<int, double> &b) {
@@ -33,6 +32,8 @@ public:
 	double C_value;
 	// probe at most trunStep steps, trunStep <= maxStep and is dynamically determined
 	int maxStep;
+
+	/* for my batch */
 	int trunStep;
 	// estimate the costs of deterministic probe and randomized probe for each step
 	double *randomCost;
@@ -49,6 +50,9 @@ public:
 	int* UC[1];
 	int nr;
 	Random R;
+
+	/* for unbiased prefiltering */
+	int *Count[2];
 	
 	// batch tree
 	struct WalkTree{
@@ -86,7 +90,7 @@ public:
 
 		C_value = 0.6;
 
-		nr = (int)( 1.0/(eps * eps) * log(g.n)/log(2));	
+		nr = (int)( 0.5/(eps * eps) * log(g.n)/log(2));	
 		cout << "nr= " << nr << endl;
 
 		H[0] = new double[g.n];
@@ -103,6 +107,14 @@ public:
 			C[0][i] = 0;
 			UC[0][i] = -1;
     	}
+		//
+		Count[0] = new int[g.n];
+		Count[1] = new int[g.n];
+		for(int i = 0; i < g.n; i++)
+		{
+			Count[0][i] = 0;
+			Count[1][i] = 0;
+		}
 		
 		maxStep = 5;	// 5
 		trunStep = maxStep;
@@ -126,6 +138,15 @@ public:
 		delete[] U[1];
 		delete[] C[0];
 		delete[] UC[0];
+
+		//delete[] Count[0];
+		//delete[] Count[1];
+
+		delete[] randomCost;
+		delete[] deterCost;
+		delete[] mustRandom;
+		delete[] lvl;
+		delete[] sampleLvl;
     }
     
 	double batch(int u, string res_dir)
@@ -172,9 +193,6 @@ public:
 		return time;
 	}
 
-	/*
-	The batch method.
-	*/
 	void simRank_WalkTree(int u, double resultList[], int* nodeList){
 		WalkTree* root = new WalkTree();
 		root->node = u;
@@ -210,7 +228,7 @@ public:
 		clock_t t1 = clock();
 		cout << "tree construction time: " << (t1 - t0) /(double) CLOCKS_PER_SEC << endl;
 		cout << "walk tree size: " << idCount << endl;
-		int maxRatio = 50;	// trade off between deter cost and random cost
+		int maxRatio = 10;	// trade off between deter cost and random cost
 		// for step = 2 to maxStep, estimate the random cost and the deter cost
 		estProbeCost(root, maxRatio);
 		clock_t t2 = clock();
@@ -287,6 +305,7 @@ public:
 		nodeList.push_back(root->node);
 		// traverse the batch tree and estimate cost
 		traverse(root, nodeList, maxRatio);
+		//trunStep = max(trunStep, 2);
 	}
 
 	// traverse the batch tree, for each step, estimate random/deter cost
@@ -296,10 +315,11 @@ public:
 		{
 			nodeList.push_back(root->children[i]->node);
 			int level = nodeList.size() - 1;
-			if(level >= 2 && level <= trunStep && trunStep > 2 && find(sampleLvl[level].begin(), sampleLvl[level].end(), root->children[i]->id) != sampleLvl[level].end())
+			if(level >= 2 && level <= trunStep && find(sampleLvl[level].begin(), sampleLvl[level].end(), root->children[i]->id) != sampleLvl[level].end())
 			{
-				int num_random_visit = randomProbe(nodeList, nullptr, level * 1000 * (int)(2.0 * g.m / g.n));	// thres_random_visit = level * 1000 * (int)(2.0 * g.m / g.n)
-				cout << "level: " << level << "\tnum_random_visit= " << num_random_visit << " , thres_random_visit= " << level * 1000 * (int)(2.0 * g.m / g.n) << endl;
+				int thres_random_visit = (int) (level * 1000 * 2.0 * g.m / g.n);	// level * 1000 * (int)(2.0 * g.m / g.n)
+				int num_random_visit = randomProbe(nodeList, nullptr, thres_random_visit);	// 
+				cout << "level: " << level << "\tnum_random_visit= " << num_random_visit << " , thres_random_visit= " << thres_random_visit << endl;
 				if(num_random_visit == -1)
 				{
 					trunStep = max(2, level - 1);	//
@@ -308,8 +328,8 @@ public:
 				}
 				else if(mustRandom[level] == false)
 				{
-					int num_deter_visit = deterProbe(nodeList, 0, nullptr, max(level * 1000 * (int)(2.0 * g.m / g.n), num_random_visit * maxRatio));	// thres_random_visit
-					cout << "num_deter_visit= " << num_deter_visit << " , thres_random_visit= " << level * 1000 * (int)(2.0 * g.m / g.n) << " , num_random_visit * maxRatio= " << num_random_visit * maxRatio << endl;
+					int num_deter_visit = deterProbe(nodeList, 0, nullptr, max(thres_random_visit, num_random_visit * maxRatio));	// 
+					cout << "num_deter_visit= " << num_deter_visit << " , thres_random_visit= " << thres_random_visit << " , num_random_visit * maxRatio= " << num_random_visit * maxRatio << endl;
 					if(num_deter_visit == -1)
 					{
 						for(int x = level; x <= maxStep; x++)
@@ -342,7 +362,7 @@ public:
 			if(level >= 2 && level <= trunStep)
 			{
 				// if deterCost / randomCost >= weight * maxRatio, randomCost is better
-				if(mustRandom[level] == true || randomCost[level] * root->children[i]->weight * maxRatio <= deterCost[level])
+				if(mustRandom[level] == true || randomCost[level] * root->children[i]->weight * maxRatio / (double)level <= deterCost[level])
 				{
 					for(int x = 0; x < (int)(root->children[i]->weight); x++)
 						randomProbe(nodeList, resultList);
@@ -632,6 +652,398 @@ public:
 		double t = (t1 - t0)/(double)CLOCKS_PER_SEC;
 		cout << t << "s" << endl;
 		return t;
+	}
+
+	double oneHopAndRandomizedProbe(int u, string res_dir)
+	{
+		vector<int> nodeList;
+		double* resultList = new double[g.n];
+		for (int i = 0; i < g.n; i++){		
+			resultList[i] = 0;
+		}
+		trunStep = 2;
+		cout << "trunStep= " << trunStep << endl;
+		clock_t ts = clock();
+		// one hop deter
+		oneHopDeter(u, resultList);
+		for (int k = 1; k <= nr; k++)
+		{
+			nodeList.clear();
+			int tempNode = u;
+			nodeList.push_back(u);
+			int nodeCount = 1;
+			
+			while (R.drand() < C_value){
+				int length = g.getInSize(tempNode);
+				if (length == 0)
+					break;
+				int r = R.generateRandom() % length;	
+				
+				int newNode = g.getInVert(tempNode, r);
+				nodeList.push_back(newNode);
+				tempNode = newNode;
+				nodeCount++;
+				if (nodeCount > trunStep + 1)
+					break;
+
+				if(nodeCount > 2)
+					randomProbe(nodeList, resultList);
+			}
+			
+		}
+		clock_t te = clock();
+
+		vector<pair<int, double> >sims;
+		for (int i = 0; i < g.n; i++){
+			if(i != u && resultList[i] > 0)
+				sims.push_back(pair<int, double>(i, resultList[i] / (double)nr));	
+		}
+		sort(sims.begin(), sims.end(), comp);
+		stringstream ss_out;
+		ss_out << res_dir << "/" << u << ".txt";
+		ofstream of_res(ss_out.str());
+		for(int i=0; i<sims.size(); i++)
+			of_res << sims[i].first << " " << sims[i].second << endl;
+		of_res.flush(); of_res.close();
+		delete[] resultList;
+				
+		return (te - ts) / (double)CLOCKS_PER_SEC;
+	}
+
+	int prefilter(vector<int> nodeList, double* resultList){
+		if(nodeList.size() - 1 > trunStep)
+			return 0;
+		int num_visit_nodes = 0;
+
+		int target = nodeList.size() - 1;
+		int root_node = nodeList[target];
+		int ind = 0;
+		H[ind][root_node] = 1;
+		int Ucount = 1;
+		int Ucount1 = 0;
+		//int UCcount = 0;
+		U[0][0] = root_node;
+		for (int i = 0; i < target; i++){
+			for (int j = 0; j < Ucount; j++){
+				int tempNode = U[ind][j];
+				int outCount = g.getOutSize(tempNode);
+				// prefilter
+				double threshold = 1.0 / R.drand();
+
+				num_visit_nodes += outCount;
+
+				for (int k = 0; k < outCount; k++){
+					int newNode = g.getOutVert(tempNode, k);
+					// prefilter
+					if(g.indegree[newNode] > threshold)
+					{
+						//cout << "newNode= " << newNode << " , indegree= " << g.indegree[newNode] << " , thres= " << threshold << endl;
+						break;
+					}
+
+					if (newNode != nodeList[target - i - 1]){
+						if(H[1-ind][newNode] == 0)
+						{
+							H[1-ind][newNode] = 1;
+							U[1-ind][Ucount1] = newNode;
+							Ucount1++;
+						}
+					}
+				}
+			}
+			
+			for (int j = 0; j < Ucount; j++){
+				H[ind][U[ind][j]] = 0;
+				U[ind][j] = -1;
+			}
+			Ucount = Ucount1;
+			Ucount1 = 0;
+			//UCcount = 0;
+			ind = 1 - ind;
+			if (Ucount == 0)
+				break;
+		}
+		for (int i = 0; i < Ucount; i++){
+			int tempNode = U[ind][i];
+			if(resultList != nullptr)	//
+				resultList[tempNode] += H[ind][tempNode];
+			U[ind][i] = -1;
+			H[ind][tempNode] = 0;
+		}
+		Ucount = 0;
+
+		return num_visit_nodes;
+	}
+
+	int unbiasedPrefilter(vector<int> nodeList, double* resultList){
+		if(nodeList.size() - 1 > trunStep)
+			return 0;
+		int num_visit_nodes = 0;
+
+		//cout << endl;
+		//
+		int target = nodeList.size() - 1;
+		int root_node = nodeList[target];
+		int ind = 0;
+		H[ind][root_node] = 1;
+		int Ucount = 1;
+		int Ucount1 = 0;
+		//int UCcount = 0;
+		U[0][0] = root_node;
+		Count[0][root_node] = 1;
+		for (int i = 0; i < target; i++){
+			for (int j = 0; j < Ucount; j++){
+				int tempNode = U[ind][j];
+				int outCount = g.getOutSize(tempNode);
+				// prefilter
+				double threshold = Count[ind][tempNode] / R.drand();
+				//cout << "tempNode= " << tempNode << " , Count[ind][tempNode]= " << Count[ind][tempNode] << endl;
+
+				num_visit_nodes += outCount;
+
+				for (int k = 0; k < outCount; k++){
+					int newNode = g.getOutVert(tempNode, k);
+					// prefilter
+					if(g.indegree[newNode] > threshold)
+					{
+						//cout << "newNode= " << newNode << " , indegree= " << g.indegree[newNode] << " , thres= " << threshold << endl;
+						break;
+					}
+
+					if (newNode != nodeList[target - i - 1]){
+						if(H[1-ind][newNode] == 0)
+						{
+							H[1-ind][newNode] = 1;
+							Count[1-ind][newNode] = 1;
+							U[1-ind][Ucount1] = newNode;
+							//cout << "newNode= " << newNode << " , Ucount1= " << Ucount1 << " , Count[1-ind][newNode]= " << Count[1-ind][newNode] << endl;
+							Ucount1++;
+						}
+						//
+						else
+						{
+							Count[1-ind][newNode] ++;
+							//cout << "newNode= " << newNode << " , Ucount1= " << Ucount1 << " , Count[1-ind][newNode]= " << Count[1-ind][newNode] << endl;
+						}
+					}
+				}
+			}
+			//cout << "..." << endl;
+			for (int j = 0; j < Ucount; j++){
+				H[ind][U[ind][j]] = 0;
+				//
+				Count[ind][U[ind][j]] = 0;
+				U[ind][j] = -1;
+			}
+			Ucount = Ucount1;
+			Ucount1 = 0;
+			//UCcount = 0;
+			ind = 1 - ind;
+			if (Ucount == 0)
+				break;
+		}
+		//cout << "...(2)" << endl;
+		for (int i = 0; i < Ucount; i++){
+			int tempNode = U[ind][i];
+			if(resultList != nullptr)	//
+				resultList[tempNode] += H[ind][tempNode];
+			U[ind][i] = -1;
+			H[ind][tempNode] = 0;
+		}
+		Ucount = 0;
+		//cout << "...(3)" << endl;
+		return num_visit_nodes;
+	}
+
+	int unbiasedPrefilter2(vector<int> nodeList, double* resultList){
+		if(nodeList.size() - 1 > trunStep)
+			return 0;
+		int num_visit_nodes = 0;
+
+		//cout << endl;
+		//
+		int target = nodeList.size() - 1;
+		int root_node = nodeList[target];
+		int ind = 0;
+		H[ind][root_node] = 1;
+		int Ucount = 1;
+		int Ucount1 = 0;
+		//int UCcount = 0;
+		U[0][0] = root_node;
+		Count[0][root_node] = 1;
+		for (int i = 0; i < target; i++){
+			for (int j = 0; j < Ucount; j++){
+				int tempNode = U[ind][j];
+				int outCount = g.getOutSize(tempNode);
+				// prefilter
+				double threshold = 1.0 / R.drand();
+				//cout << "tempNode= " << tempNode << " , Count[ind][tempNode]= " << Count[ind][tempNode] << endl;
+
+				num_visit_nodes += outCount;
+
+				for (int k = 0; k < outCount; k++){
+					int newNode = g.getOutVert(tempNode, k);
+					// prefilter
+					if(g.indegree[newNode] > threshold)
+					{
+						//cout << "newNode= " << newNode << " , indegree= " << g.indegree[newNode] << " , thres= " << threshold << endl;
+						break;
+					}
+
+					if (newNode != nodeList[target - i - 1]){
+						if(H[1-ind][newNode] == 0)
+						{
+							H[1-ind][newNode] += Count[ind][tempNode];
+							Count[1-ind][newNode] = 1;
+							U[1-ind][Ucount1] = newNode;
+							//cout << "newNode= " << newNode << " , Ucount1= " << Ucount1 << " , Count[1-ind][newNode]= " << Count[1-ind][newNode] << endl;
+							Ucount1++;
+						}
+						//
+						else
+						{
+							H[1-ind][newNode] += Count[ind][tempNode];
+							Count[1-ind][newNode] ++;
+							//cout << "newNode= " << newNode << " , Ucount1= " << Ucount1 << " , Count[1-ind][newNode]= " << Count[1-ind][newNode] << endl;
+						}
+					}
+				}
+			}
+			//cout << "..." << endl;
+			for (int j = 0; j < Ucount; j++){
+				H[ind][U[ind][j]] = 0;
+				//
+				Count[ind][U[ind][j]] = 0;
+				U[ind][j] = -1;
+			}
+			Ucount = Ucount1;
+			Ucount1 = 0;
+			//UCcount = 0;
+			ind = 1 - ind;
+			if (Ucount == 0)
+				break;
+		}
+		//cout << "...(2)" << endl;
+		for (int i = 0; i < Ucount; i++){
+			int tempNode = U[ind][i];
+			if(resultList != nullptr)	//
+				resultList[tempNode] += H[ind][tempNode];
+			U[ind][i] = -1;
+			H[ind][tempNode] = 0;
+		}
+		Ucount = 0;
+		//cout << "...(3)" << endl;
+		return num_visit_nodes;
+	}
+
+	void newRandomProbe(vector<int> nodeList, double* resultList){
+		int target = nodeList.size() - 1;
+		int root_node = nodeList[target];
+		int ind = 0;
+		H[ind][root_node] = 1;
+		int Ucount = 1;
+		int Ucount1 = 0;
+		int UCcount = 0;
+		U[0][0] = root_node;
+		for (int i = 0; i < target; i++){
+			for (int j = 0; j < Ucount; j++){
+				int tempNode = U[ind][j];
+				int outCount = g.getOutSize(tempNode);
+				double tempMaxInSize = 1 / R.drand();
+				//cout << "tempMax: " << tempMaxInSize << endl;
+				for (int k = 0; k < outCount; k++){
+					int newNode = g.getOutVert(tempNode, k);
+				//	cout << "inSize: " << g.getInSize(newNode) << endl;
+					if(g.getInSize(newNode) > tempMaxInSize){
+						break;
+					}
+					if(H[1-ind][newNode] == 1 || newNode == nodeList[target - i - 1])
+						continue;
+					H[1-ind][newNode] = 1;
+					U[1-ind][Ucount1++] = newNode;
+				}
+			}
+			for (int j = 0; j < Ucount; j++){
+				H[ind][U[ind][j]] = 0;
+				U[ind][j] = -1;
+			}
+			Ucount = Ucount1;
+			Ucount1 = 0;
+			ind = 1 - ind;
+			if (Ucount == 0)
+				break;
+		}
+		for (int i = 0; i < Ucount; i++){
+			int tempNode = U[ind][i];
+			resultList[tempNode] += H[ind][tempNode];
+			U[ind][i] = -1;
+			H[ind][tempNode] = 0;
+		}
+		Ucount = 0;
+	}
+	double prefiltering(int u, string res_dir)
+	{
+		clock_t ts = clock();
+		vector<int> nodeList;
+		double* resultList = new double[g.n];
+		for (int i = 0; i < g.n; i++){		
+			resultList[i] = 0;
+		}
+
+		for (int k = 1; k <= nr; k++)
+		{
+			nodeList.clear();
+			int tempNode = u;
+			nodeList.push_back(u);
+			int nodeCount = 1;
+			
+			while (R.drand() < C_value){
+				int length = g.getInSize(tempNode);
+				if (length == 0)
+					break;
+				int r = R.generateRandom() % length;	
+				
+				int newNode = g.getInVert(tempNode, r);
+				nodeList.push_back(newNode);
+				tempNode = newNode;
+				nodeCount++;
+				if (nodeCount > maxStep + 1)
+					break;
+
+				//prefilter(nodeList, resultList);
+				//unbiasedPrefilter(nodeList, resultList);
+				unbiasedPrefilter2(nodeList, resultList);
+				//cout << "done" << endl;
+			}
+			
+		}
+		//cout << "?" << endl;
+		vector<pair<int, double> >sims;
+		for (int i = 0; i < g.n; i++){
+			if(i != u && resultList[i] > 0)
+				sims.push_back(pair<int, double>(i, resultList[i] / (double)nr));	
+		}
+		cout << "sims.size()= " << sims.size() << endl;
+		for(int x = 0; x < sims.size(); x++)
+			cout << sims[x].first << "\t" << sims[x].second << endl;
+		sort(sims.begin(), sims.end(), comp);
+		//cout << "??a" << endl;
+		stringstream ss_out;
+		//cout << "??b" << endl;
+		cout << res_dir << endl;
+		ss_out << res_dir << "/" << u << ".txt";
+		//cout << "??c" << endl;
+		ofstream of_res(ss_out.str().c_str());
+		//cout << "??d" << endl;
+		for(int i = 0; i < sims.size(); i++)
+			of_res << sims[i].first << " " << sims[i].second << endl;
+		of_res.flush(); of_res.close();
+		//cout << "??" << endl;
+		delete[] resultList;
+
+		clock_t te = clock();
+		//cout << "???" << endl;
+		return (te - ts) / (double)CLOCKS_PER_SEC;
 	}
 };
 #endif
