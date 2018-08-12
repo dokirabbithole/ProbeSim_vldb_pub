@@ -15,8 +15,8 @@ double calAbsError(unordered_map<int, double> &topk, unordered_map<int, double> 
 		int v = realItor->first;
 		if(topk.find(v) != topk.end())
 		{
-			if(abs(realItor->second - topk.find(v)->second) > max_err)
-				max_err = abs(realItor->second - topk.find(v)->second);
+			if(fabs(realItor->second - topk.find(v)->second) > max_err)
+				max_err = fabs(realItor->second - topk.find(v)->second);
 		}
 		else
 		{
