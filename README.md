@@ -24,7 +24,14 @@
 
 <h2>Compile the code</h2>
 
-<p>g++ -march=core2 -pthread -std=c++11 -DSFMT_MEXP=607 -I SFMT-src-1.4.1 -O3 -o ProbeSim SFMT-src-1.4.1/SFMT.c main.cpp</p>
+<p>sh compile.sh</p>
+
+<h2>Parameters</h2>
+
+<p>-g <edge file of the graph></p>
+<p>-e <abosulute error></p>
+<p>-q <query node list></p>
+<p>-d <result directory></p>
 
 <h2>Run the example</h2>
 
