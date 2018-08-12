@@ -28,10 +28,10 @@
 
 <h2>Parameters</h2>
 
-<p>-g \<edge file of the graph\></p>
-<p>-e \<abosulute error\></p>
-<p>-q \<query node list\></p>
-<p>-d \<result directory\></p>
+<p>-g &lt;edge file of the graph&gt;</p>
+<p>-e &lt;abosulute error&gt;</p>
+<p>-q &lt;query node list&gt;</p>
+<p>-d &lt;result directory&gt;</p>
 
 <h2>Run the example</h2>
 
