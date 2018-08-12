@@ -1,0 +1,2 @@
+g++ -march=core2 -pthread -std=c++11 -DSFMT_MEXP=607 -I SFMT-src-1.4.1 -O3 -o ProbeSim SFMT-src-1.4.1/SFMT.c main.cpp
+./ProbeSim -g dataset/toy_graph.txt -e 0.1 -q query/toy_graph.query -d result/toy_graph/
