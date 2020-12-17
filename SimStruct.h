@@ -278,7 +278,7 @@ public:
 		for(int i = 2; i <= maxStep; i++)
 		{
 			int minSize = 5;
-			int sampleSize = max(minSize, (int)(lvl[i].size()) / (nr/100));
+			int sampleSize = max(minSize, (int)(lvl[i].size()) / nr);
 			if(lvl[i].size() <= sampleSize)
 			{
 				for(int j = 0; j < lvl[i].size(); j++)
